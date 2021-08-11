@@ -1,5 +1,5 @@
 cython
-keras-resnet==0.2.0
+git+https://github.com/TomW1495/keras-resnet.git@master#egg=keras-resnet
 git+https://github.com/cocodataset/cocoapi.git#subdirectory=PythonAPI
 h5py
 keras
