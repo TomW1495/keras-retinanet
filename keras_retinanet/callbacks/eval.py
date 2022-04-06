@@ -17,6 +17,7 @@ limitations under the License.
 from tensorflow import keras
 from ..utils.eval import evaluate
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 class Evaluate(keras.callbacks.Callback):
