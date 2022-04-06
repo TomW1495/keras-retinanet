@@ -95,7 +95,7 @@ class Evaluate(keras.callbacks.Callback):
                 writer.flush()
                 
         decreasing_max_precision = np.maximum.accumulate(self.precision[::-1])[::-1]
-
+        title = "Precision Recall Graph Epoch " + str(epoch)
         plt.plot(self.recall, decreasing_max_precision)
         plt.title(title)
         plt.xlabel('Recall')
