@@ -23,6 +23,8 @@ import numpy as np
 class Evaluate(keras.callbacks.Callback):
     """ Evaluation callback for arbitrary datasets.
     """
+    precision = np.zeros((0,))
+    recall = np.zeros((0,))
 
     def __init__(
         self,
@@ -62,7 +64,7 @@ class Evaluate(keras.callbacks.Callback):
         logs = logs or {}
 
         # run evaluation
-        average_precisions, time, self.precision, self.recall = evaluate(
+        average_precisions, time, Evaluation.precision, Evaluation.recall = evaluate(
             self.generator,
             self.model,
             iou_threshold=self.iou_threshold,
@@ -96,15 +98,6 @@ class Evaluate(keras.callbacks.Callback):
                 writer.flush()
 
         logs['mAP'] = self.mean_ap
-        
-        # create precision recall graph
-        title = "Precision Recal Graph Epoch " + str(epoch)
-        decreasing_max_precision = np.maximum.accumulate(precision[::-1])[::-1]
-        plt.plot(recall, decreasing_max_precision)
-        plt.title(title)
-        plt.xlabel('Recall')
-        plt.ylabel('Precision')
-        plt.savefig(title + "png")
 
         if self.verbose == 1:
             print('mAP: {:.4f}'.format(self.mean_ap))
