@@ -101,9 +101,7 @@ class Evaluate(keras.callbacks.Callback):
             summary = tf.summary.scalar('Recall', temp_variable)
             with writer.as_default():
                 for i in range(len(self.recall)):
-                    temp_variable = tf.summary.scalar('Recall', self.recall[i])
-                    summary = tf.summary.merge([summary, temp_variable])
-                    writer.add_summary(summary, decreasing_max_precision[i])
+                    tf.summary.scalar('Precision Recall', self.recall[i], step=decreasing_max_precision[i])
                 writer.flush()
 
         logs['mAP'] = self.mean_ap
