@@ -112,7 +112,7 @@ class Evaluate(keras.callbacks.Callback):
             pr_curve_fig = tf.expand_dims(pr_curve_fig, 0)
 
             with writer.as_default():
-                tf.summary.image(title, pr_curve_fig)
+                tf.summary.image(title, pr_curve_fig, step=epoch)
                 writer.flush()
 
         logs['mAP'] = self.mean_ap
