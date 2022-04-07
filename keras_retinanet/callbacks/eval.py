@@ -100,7 +100,9 @@ class Evaluate(keras.callbacks.Callback):
             writer = tf.summary.create_file_writer(self.tensorboard.log_dir + "/pr_curve_epoch_" + str(epoch))
             
             title = "Precision Recall Curve Epoch " + str(epoch)
-            plt.plot(self.recall, decreasing_max_precision)
+            print('Recall: {:.4f}'.format(self.recall))
+            print('Precision: {:.4f}'.format(decreasing_max_precision))
+            plt.plot(self.recall[epoch], decreasing_max_precision[epoch])
             plt.title(title)
             plt.xlabel('Recall')
             plt.ylabel('Precision')
@@ -114,6 +116,8 @@ class Evaluate(keras.callbacks.Callback):
             with writer.as_default():
                 tf.summary.image(title, pr_curve_fig, step=epoch)
                 writer.flush()
+            
+
 
         logs['mAP'] = self.mean_ap
 
