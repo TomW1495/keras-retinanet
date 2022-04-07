@@ -100,7 +100,7 @@ class Evaluate(keras.callbacks.Callback):
             temp_variable = tf.Variable(0)
             summary = tf.summary.scalar('Recall', temp_variable)
             with writer.as_default():
-                for i in range(self.recall.size()):
+                for i in range(len(self.recall)):
                     temp_variable = tf.summary.scalar('Recall', self.recall[i])
                     summary = tf.summary.merge([summary, temp_variable])
                     writer.add_summary(summary, decreasing_max_precision[i])
