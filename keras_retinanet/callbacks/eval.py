@@ -70,6 +70,8 @@ class Evaluate(keras.callbacks.Callback):
             save_path=self.save_path
         )
 
+        decreasing_max_precision = np.maximum.accumulate(self.precision[::-1])[::-1]
+
         # compute per class average precision
         total_instances = []
         precisions = []
@@ -93,14 +95,18 @@ class Evaluate(keras.callbacks.Callback):
                     for label, (average_precision, num_annotations) in average_precisions.items():
                         tf.summary.scalar("AP_" + self.generator.label_to_name(label), average_precision, step=epoch)
                 writer.flush()
-                
-        decreasing_max_precision = np.maximum.accumulate(self.precision[::-1])[::-1]
-        title = "Precision Recall Graph Epoch " + str(epoch)
-        plt.plot(self.recall, decreasing_max_precision)
-        plt.title(title)
-        plt.xlabel('Recall')
-        plt.ylabel('Precision')
-        plt.savefig(title + "png")
+
+            writer = tf.summary.FileWriter(self.tensorboard.log_dir)
+            temp_variable = tf.Variable(0)
+            scalar_value = tf.summary.scalar('Recall', temp_variable)
+            write = tf.summary.merge([scalar_value])
+
+            with tf.Session() as sess:
+                for i in range(self.recall.size()):
+                    summary = sess.run(write, {temp_variable: self.recall[i]})
+                    writer.add_summary(summary, decreasing_max_precision[i])
+                writer.flush()
+
 
         logs['mAP'] = self.mean_ap
 
