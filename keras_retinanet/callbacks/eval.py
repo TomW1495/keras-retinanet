@@ -18,6 +18,7 @@ from tensorflow import keras
 from ..utils.eval import evaluate
 import matplotlib.pyplot as plt
 import numpy as np
+import io
 
 
 class Evaluate(keras.callbacks.Callback):
@@ -97,11 +98,21 @@ class Evaluate(keras.callbacks.Callback):
                 writer.flush()
 
             writer = tf.summary.create_file_writer(self.tensorboard.log_dir + "/pr_curve_epoch_" + str(epoch))
-            temp_variable = tf.Variable(0)
-            summary = tf.summary.scalar('Recall', temp_variable)
+            
+            title = "Precision Recall Curve Epoch " + str(epoch)
+            plt.plot(self.recall, decreasing_max_precision)
+            plt.title(title)
+            plt.xlabel('Recall')
+            plt.ylabel('Precision')
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png')
+            buf.seek(0)
+
+            pr_curve_fig = tf.image.decode_png(buf.getvalue(), channels=4)
+            pr_curve_fig = tf.expand_dims(pr_curve_fig, 0)
+
             with writer.as_default():
-                for i in range(len(self.recall)):
-                    tf.summary.scalar('Precision Recall', self.recall[i], step=decreasing_max_precision[i])
+                tf.summary.image(title, pr_curve_fig)
                 writer.flush()
 
         logs['mAP'] = self.mean_ap
