@@ -96,17 +96,15 @@ class Evaluate(keras.callbacks.Callback):
                         tf.summary.scalar("AP_" + self.generator.label_to_name(label), average_precision, step=epoch)
                 writer.flush()
 
-            writer = tf.summary.FileWriter(self.tensorboard.log_dir)
+            writer = tf.summary.create_file_writer(self.tensorboard.log_dir + "/pr_curve_epoch_" + str(epoch))
             temp_variable = tf.Variable(0)
-            scalar_value = tf.summary.scalar('Recall', temp_variable)
-            write = tf.summary.merge([scalar_value])
-
-            with tf.Session() as sess:
+            summary = tf.summary.scalar('Recall', temp_variable)
+            with writer.as_default():
                 for i in range(self.recall.size()):
-                    summary = sess.run(write, {temp_variable: self.recall[i]})
+                    temp_variable = tf.summary.scalar('Recall', self.recall[i])
+                    summary = tf.summary.merge([summary, temp_variable])
                     writer.add_summary(summary, decreasing_max_precision[i])
                 writer.flush()
-
 
         logs['mAP'] = self.mean_ap
 
