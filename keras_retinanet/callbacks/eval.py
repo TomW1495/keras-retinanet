@@ -113,6 +113,7 @@ class Evaluate(keras.callbacks.Callback):
 
             pr_curve_fig = tf.image.decode_png(buf.getvalue(), channels=4)
             pr_curve_fig = tf.expand_dims(pr_curve_fig, 0)
+            buf.flush()
 
             with writer.as_default():
                 tf.summary.image(title, pr_curve_fig, step=epoch)
