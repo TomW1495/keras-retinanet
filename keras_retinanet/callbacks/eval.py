@@ -62,7 +62,7 @@ class Evaluate(keras.callbacks.Callback):
         logs = logs or {}
 
         # run evaluation
-        average_precisions, time, self.precision, self.recall = evaluate(
+        average_precisions, time, self.recall, self.precision = evaluate(
             self.generator,
             self.model,
             iou_threshold=self.iou_threshold,
@@ -101,7 +101,7 @@ class Evaluate(keras.callbacks.Callback):
             
             title = "Precision Recall Curve Epoch " + str(epoch)
             print('Recall: ' + str(self.recall))
-            print('Precisio: ' + str(self.precision))
+            print('Precision: ' + str(self.precision))
             print('Decreasing Precision: ' + str(decreasing_max_precision))
             plt.plot(self.recall[epoch], decreasing_max_precision[epoch])
             plt.title(title)
