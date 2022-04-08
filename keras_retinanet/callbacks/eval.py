@@ -103,7 +103,7 @@ class Evaluate(keras.callbacks.Callback):
             print('Recall: ' + str(self.recall))
             print('Precision: ' + str(self.precision))
             print('Decreasing Precision: ' + str(decreasing_max_precision))
-            plt.plot(self.recall[epoch], decreasing_max_precision[epoch])
+            plt.plot(self.recall, decreasing_max_precision)
             plt.title(title)
             plt.xlabel('Recall')
             plt.ylabel('Precision')
