@@ -17,6 +17,10 @@ limitations under the License.
 import argparse
 import os
 import sys
+import mlflow
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow import keras
 
 # Allow relative imports when being executed as script.
 if __name__ == "__main__" and __package__ is None:
@@ -86,7 +90,7 @@ def parse_args(args):
     subparsers.required = True
 
     coco_parser = subparsers.add_parser('coco')
-    coco_parser.add_argument('coco_path', help='Path to dataset directory (ie. /tmp/COCO).')
+    coco_parser.add_argument('--coco_path', help='Path to dataset directory (ie. /tmp/COCO).', default='../data/coco_eval')
 
     pascal_parser = subparsers.add_parser('pascal')
     pascal_parser.add_argument('pascal_path', help='Path to dataset directory (ie. /tmp/VOCdevkit).')
@@ -96,7 +100,7 @@ def parse_args(args):
     csv_parser.add_argument('annotations', help='Path to CSV file containing annotations for evaluation.')
     csv_parser.add_argument('classes', help='Path to a CSV file containing class label mapping.')
 
-    parser.add_argument('model',              help='Path to RetinaNet model.')
+    parser.add_argument('--model',            help='Path to RetinaNet model.', default="n/a")
     parser.add_argument('--convert-model',    help='Convert the model to an inference model (ie. the input is a training model).', action='store_true')
     parser.add_argument('--backbone',         help='The backbone of the model.', default='resnet50')
     parser.add_argument('--gpu',              help='Id of the GPU to use (as reported by nvidia-smi).')
@@ -109,7 +113,11 @@ def parse_args(args):
     parser.add_argument('--no-resize',        help='Don''t rescale the image.', action='store_true')
     parser.add_argument('--config',           help='Path to a configuration parameters .ini file (only used with --convert-model).')
     parser.add_argument('--group-method',     help='Determines how images are grouped together', type=str, default='ratio', choices=['none', 'random', 'ratio'])
-
+    parser.add_argument('--mlflow-model',     help='uri to mlflow model')
+    parser.add_argument('--run_name',         help='Name of run.')
+    parser.add_argument('--run_description',  help='Description of run.')
+    parser.add_argument('--dataset_dir',      help='Name of run.')
+    parser.add_argument('--tracking_uri',     help='URI for mlflow UI.', default = "http://0.0.0.0:5000", required=False)
     return parser.parse_args(args)
 
 
@@ -147,9 +155,17 @@ def main(args=None):
         pyramid_levels = parse_pyramid_levels(args.config)
 
     # load the model
-    print('Loading model, this may take a second...')
-    model = models.load_model(args.model, backbone_name=args.backbone)
-    generator.compute_shapes = make_shapes_callback(model)
+    if args.mlflow_model:
+        print('Loading mlflow model, this may take a second...')
+        tracking_uri = "http://0.0.0.0:5000"
+        model_uri = args.mlflow_model
+
+        mlflow.set_tracking_uri(tracking_uri)
+        model = mlflow.keras.load_model(model_uri)
+    else:
+        print('Loading model, this may take a second...')
+        model = models.load_model(args.model, backbone_name=args.backbone)
+        generator.compute_shapes = make_shapes_callback(model)
 
     # optionally convert the model
     if args.convert_model:
@@ -163,32 +179,54 @@ def main(args=None):
         from ..utils.coco_eval import evaluate_coco
         evaluate_coco(generator, model, args.score_threshold)
     else:
-        average_precisions, inference_time = evaluate(
-            generator,
-            model,
-            iou_threshold=args.iou_threshold,
-            score_threshold=args.score_threshold,
-            max_detections=args.max_detections,
-            save_path=args.save_path
-        )
+        mlflow_tags = {"Eval Dataset": args.dataset_dir}
+        with mlflow.start_run(run_id = args.run_name):
+            mlflow.set_tags(mlflow_tags)
+            average_precisions, inference_time, recall, precision= evaluate(
+                generator,
+                model,
+                iou_threshold=args.iou_threshold,
+                score_threshold=args.score_threshold,
+                max_detections=args.max_detections,
+                save_path=args.save_path
+            )
+            
+            # print evaluation
+            total_instances = []
+            precisions = []
+            for label, (average_precision, num_annotations) in average_precisions.items():
+                print('{:.0f} instances of class'.format(num_annotations),
+                    generator.label_to_name(label), 'with average precision: {:.4f}'.format(average_precision))
+                total_instances.append(num_annotations)
+                precisions.append(average_precision)
 
-        # print evaluation
-        total_instances = []
-        precisions = []
-        for label, (average_precision, num_annotations) in average_precisions.items():
-            print('{:.0f} instances of class'.format(num_annotations),
-                  generator.label_to_name(label), 'with average precision: {:.4f}'.format(average_precision))
-            total_instances.append(num_annotations)
-            precisions.append(average_precision)
+            if sum(total_instances) == 0:
+                print('No test instances found.')
+                return
 
-        if sum(total_instances) == 0:
-            print('No test instances found.')
-            return
+            print('Inference time for {:.0f} images: {:.4f}'.format(generator.size(), inference_time))
 
-        print('Inference time for {:.0f} images: {:.4f}'.format(generator.size(), inference_time))
+            print('mAP using the weighted average of precisions among classes: {:.4f}'.format(sum([a * b for a, b in zip(total_instances, precisions)]) / sum(total_instances)))
+            print('mAP: {:.4f}'.format(sum(precisions) / sum(x > 0 for x in total_instances)))
 
-        print('mAP using the weighted average of precisions among classes: {:.4f}'.format(sum([a * b for a, b in zip(total_instances, precisions)]) / sum(total_instances)))
-        print('mAP: {:.4f}'.format(sum(precisions) / sum(x > 0 for x in total_instances)))
+            mean_ap = (sum(precisions) / sum(x > 0 for x in total_instances))
+            decreasing_max_precision = np.maximum.accumulate(precision[::-1])[::-1]
+                
+            title = "Evaluation Precision Recall Curve"
+            png_name = "pr_curve_eval.png"
+            plt.clf()
+            plt.plot(recall, decreasing_max_precision)
+            plt.title(title)
+            plt.xlim((0.0,1.0))
+            plt.xlabel('Recall')
+            plt.ylabel('Precision')
+            plt.savefig(png_name)
+            mlflow.log_artifact("./" + png_name, artifact_path = "pr_curves")
+
+            # mlflow log
+            mlflow.log_metric("Eval mAP", mean_ap)
+
+            print('mAP: {:.4f}'.format(mean_ap))
 
 
 if __name__ == '__main__':

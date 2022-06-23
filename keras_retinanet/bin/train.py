@@ -23,6 +23,8 @@ import warnings
 
 from tensorflow import keras
 import tensorflow as tf
+import mlflow
+import mlflow.sklearn
 
 # Allow relative imports when being executed as script.
 if __name__ == "__main__" and __package__ is None:
@@ -34,6 +36,7 @@ if __name__ == "__main__" and __package__ is None:
 from .. import layers  # noqa: F401
 from .. import losses
 from .. import models
+from ..models.resnet import ResNetBackbone
 from ..callbacks import RedirectModel
 from ..callbacks.eval import Evaluate
 from ..models.retinanet import retinanet_bbox
@@ -183,12 +186,12 @@ def create_callbacks(model, training_model, prediction_model, validation_generat
         checkpoint = keras.callbacks.ModelCheckpoint(
             os.path.join(
                 args.snapshot_path,
-                '{backbone}_{dataset_type}_{{epoch:02d}}.h5'.format(backbone=args.backbone, dataset_type=args.dataset_type)
+                '{backbone}_{dataset_type}_best.h5'.format(backbone=args.backbone, dataset_type=args.dataset_type)
             ),
             verbose=1,
-            # save_best_only=True,
-            # monitor="mAP",
-            # mode='max'
+            save_best_only=True,
+            monitor="mAP",
+            mode='max'
         )
         checkpoint = RedirectModel(checkpoint, model)
         callbacks.append(checkpoint)
@@ -207,7 +210,7 @@ def create_callbacks(model, training_model, prediction_model, validation_generat
     if args.evaluation and validation_generator:
         callbacks.append(keras.callbacks.EarlyStopping(
             monitor    = 'mAP',
-            patience   = 5,
+            patience   = 150,
             mode       = 'max',
             min_delta  = 0.01
         ))
@@ -238,10 +241,10 @@ def create_generators(args, preprocess_image):
     # create random transform generator for augmenting training data
     if args.random_transform:
         transform_generator = random_transform_generator(
-            min_rotation=-0.1,
-            max_rotation=0.1,
-            min_translation=(-0.1, -0.1),
-            max_translation=(0.1, 0.1),
+            min_rotation=-0.3, # -0.1
+            max_rotation=0.3,  # 0.1
+            min_translation=(-0.2, -0.2),
+            max_translation=(0.2, 0.2),
             min_shear=-0.1,
             max_shear=0.1,
             min_scaling=(0.9, 0.9),
@@ -249,12 +252,13 @@ def create_generators(args, preprocess_image):
             flip_x_chance=0.5,
             flip_y_chance=0.5,
         )
-        visual_effect_generator = random_visual_effect_generator(
-            contrast_range=(0.9, 1.1),
-            brightness_range=(-.1, .1),
-            hue_range=(-0.05, 0.05),
-            saturation_range=(0.95, 1.05)
-        )
+        visual_effect_generator = None
+        # visual_effect_generator = random_visual_effect_generator(
+        #     contrast_range=(1., 1.), #(0.8, 1.2), 
+        #     brightness_range=(-.0, .3), #(-.2, .2), 
+        #     hue_range=(-0.05, 0.05),
+        #     saturation_range=(0.95, 1.05) # (0.85, 1.15)
+        # )
     else:
         transform_generator = random_transform_generator(flip_x_chance=0.5)
         visual_effect_generator = None
@@ -456,6 +460,15 @@ def parse_args(args):
     parser.add_argument('--workers',          help='Number of generator workers.', type=int, default=1)
     parser.add_argument('--max-queue-size',   help='Queue length for multiprocessing workers in fit_generator.', type=int, default=10)
 
+    # MlFlow Args
+    parser.add_argument('--run_name',         help='Name of run.')
+    parser.add_argument('--run_description',  help='Description of run.')
+    parser.add_argument('--model_version',    help='Model Version.')
+    parser.add_argument('--tracking_uri',     help='URI for mlflow UI.', default = "https://mlflow.corp.smallrobotco.ai", required=False)
+    parser.add_argument('--dataset_dir',      help='Name of run.')
+    parser.add_argument('--mlflow_user',      help='User using mlflow', default = "admin")
+    parser.add_argument('--mlflow_pwd',       help='Mlflow password',   required=True)
+
     return check_args(parser.parse_args(args))
 
 
@@ -534,20 +547,52 @@ def main(args=None):
     if not args.compute_val_loss:
         validation_generator = None
 
-    # start training
-    return training_model.fit_generator(
-        generator=train_generator,
-        steps_per_epoch=args.steps,
-        epochs=args.epochs,
-        verbose=1,
-        callbacks=callbacks,
-        workers=args.workers,
-        use_multiprocessing=args.multiprocessing,
-        max_queue_size=args.max_queue_size,
-        validation_data=validation_generator,
-        initial_epoch=args.initial_epoch
-    )
+    #MLflow tags
+    # Set username and password when authentication was added
+    os.environ['MLFLOW_TRACKING_USERNAME'] = args.mlflow_user
+    os.environ['MLFLOW_TRACKING_PASSWORD'] = args.mlflow_pwd
+    mlflow_tags = {"Model Version": args.model_version, "Dataset": args.dataset_dir}
+    mlflow.set_tracking_uri(args.tracking_uri)
+    print("tracking uri: " + (args.tracking_uri))
+    print("MlFlow User: " + args.mlflow_user)
+    with mlflow.start_run(run_name = args.run_name, description = args.run_description):
+        # start training
+        mlflow.set_tags(mlflow_tags)
+        mlflow.keras.autolog()
+        training_model.fit_generator(
+            generator=train_generator,
+            steps_per_epoch=args.steps,
+            epochs=args.epochs,
+            verbose=1,
+            callbacks=callbacks,
+            workers=args.workers,
+            use_multiprocessing=args.multiprocessing,
+            max_queue_size=args.max_queue_size,
+            validation_data=validation_generator,
+            initial_epoch=args.initial_epoch
+        )
+        print("Converting Model, this may take a while...")
 
+        best_model_path = os.path.join(args.snapshot_path,
+            '{backbone}_{dataset_type}_best.h5'.format(backbone=args.backbone, dataset_type=args.dataset_type)
+            )
+
+        best_model = models.load_model(best_model_path, args.backbone)
+
+        anchor_params = None
+        num_anchors   = None
+        pyramid_levels = None
+        if args.config and 'anchor_parameters' in args.config:
+            anchor_params = parse_anchor_parameters(args.config)
+            num_anchors   = anchor_params.num_anchors()
+        if args.config and 'pyramid_levels' in args.config:
+            pyramid_levels = parse_pyramid_levels(args.config)
+        
+        best_model = models.convert_model(best_model, anchor_params=anchor_params, pyramid_levels=pyramid_levels)
+        # get custom objects for saving model
+        custom_obj = ResNetBackbone(args.backbone).custom_objects
+        print("Logging Model")
+        mlflow.keras.log_model(best_model, "WeedKerasRetinaNet", custom_objects = custom_obj)
 
 if __name__ == '__main__':
     main()
