@@ -180,15 +180,15 @@ def main(args=None):
         evaluate_coco(generator, model, args.score_threshold)
     else:
         mlflow_tags = {"Eval Dataset": args.dataset_dir}
-        with mlflow.start_run(run_id = args.run_name):
+        with mlflow.start_run(run_id=args.run_name):
             mlflow.set_tags(mlflow_tags)
-            average_precisions, inference_time, recall, precision= evaluate(
+            average_precisions, inference_time, recall, precision = evaluate(
                 generator,
                 model,
                 iou_threshold=args.iou_threshold,
                 score_threshold=args.score_threshold,
                 max_detections=args.max_detections,
-                save_path=args.save_path
+                save_path="./sample_detections_annotations"
             )
             
             # print evaluation
@@ -221,7 +221,10 @@ def main(args=None):
             plt.xlabel('Recall')
             plt.ylabel('Precision')
             plt.savefig(png_name)
-            mlflow.log_artifact("./" + png_name, artifact_path = "pr_curves")
+            mlflow.log_artifact("./" + png_name, artifact_path="pr_curves")
+
+            # log plotted detections and annotations for a sample of images
+            mlflow.log_artifacts("./sample_detections_annotations", artifact_path="sample_detections_annotations")
 
             # mlflow log
             mlflow.log_metric("Eval mAP", mean_ap)

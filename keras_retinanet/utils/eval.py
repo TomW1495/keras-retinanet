@@ -24,6 +24,7 @@ import time
 
 import cv2
 import progressbar
+import random
 assert(callable(progressbar.progressbar)), "Using wrong progressbar module, install 'progressbar2' instead."
 
 
@@ -71,6 +72,8 @@ def _get_detections(generator, model, score_threshold=0.05, max_detections=100, 
     # Returns
         A list of lists containing the detections for each image in the generator.
     """
+    sample_indices = random.sample(range(generator.size()), 10)
+
     all_detections = [[None for i in range(generator.num_classes()) if generator.has_label(i)] for j in range(generator.size())]
     all_inferences = [None for i in range(generator.size())]
 
@@ -105,7 +108,7 @@ def _get_detections(generator, model, score_threshold=0.05, max_detections=100, 
         image_labels     = labels[0, indices[scores_sort]]
         image_detections = np.concatenate([image_boxes, np.expand_dims(image_scores, axis=1), np.expand_dims(image_labels, axis=1)], axis=1)
 
-        if save_path is not None:
+        if (i in sample_indices) and (save_path is not None):
             draw_annotations(raw_image, generator.load_annotations(i), label_to_name=generator.label_to_name)
             draw_detections(raw_image, image_boxes, image_scores, image_labels, label_to_name=generator.label_to_name, score_threshold=score_threshold)
 
